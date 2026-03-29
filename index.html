@@ -212,8 +212,8 @@ let selectedParagraphId = null;
 let memos = {};
 
 // ===== 初期化 =====
-function init() {
-  loadMemos();
+async function init() {
+  await loadMemos();
   renderSidebar();
   updateMemoBadge();
   renderWelcomeStats();
@@ -481,24 +481,103 @@ function deleteMemo(pid) {
   renderSidebar();
 }
 
-// ===== localStorage =====
+// ===== メモ永続化（サーバー同期 + localStorageフォールバック） =====
 const STORAGE_KEY = 'alchemira-viewer-memos';
+const API_URL = '/api/memos';
+let syncStatus = 'idle'; // idle | syncing | error
 
-function loadMemos() {
+async function loadMemos() {
+  // まずlocalStorageから読み込み（即座に表示するため）
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) memos = JSON.parse(raw);
   } catch (e) {
-    console.warn('メモの読み込みに失敗:', e);
     memos = {};
   }
+
+  // サーバーから取得して上書き
+  try {
+    const res = await fetch(API_URL);
+    if (res.ok) {
+      const serverMemos = await res.json();
+      if (serverMemos && typeof serverMemos === 'object') {
+        // サーバーのデータとローカルをタイムスタンプでマージ
+        memos = mergeMemos(memos, serverMemos);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
+        // マージ結果をサーバーにも反映
+        await fetch(API_URL, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(memos),
+        });
+      }
+      syncStatus = 'idle';
+    }
+  } catch (e) {
+    console.warn('サーバー同期失敗（ローカルデータを使用）:', e.message);
+    syncStatus = 'error';
+  }
+  updateSyncIndicator();
 }
 
-function persistMemos() {
+function mergeMemos(local, server) {
+  const merged = {};
+  const allKeys = new Set([...Object.keys(local), ...Object.keys(server)]);
+  for (const key of allKeys) {
+    const l = local[key];
+    const s = server[key];
+    if (l && s) {
+      // 両方にある場合: タイムスタンプが新しい方を採用
+      merged[key] = (l.timestamp || '') >= (s.timestamp || '') ? l : s;
+    } else {
+      merged[key] = l || s;
+    }
+  }
+  return merged;
+}
+
+async function persistMemos() {
+  // ローカルに即座に保存
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
   } catch (e) {
-    console.warn('メモの保存に失敗:', e);
+    console.warn('ローカル保存失敗:', e);
+  }
+
+  // サーバーに非同期で送信
+  syncStatus = 'syncing';
+  updateSyncIndicator();
+  try {
+    const res = await fetch(API_URL, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(memos),
+    });
+    syncStatus = res.ok ? 'idle' : 'error';
+  } catch (e) {
+    console.warn('サーバー同期失敗:', e.message);
+    syncStatus = 'error';
+  }
+  updateSyncIndicator();
+}
+
+function updateSyncIndicator() {
+  let el = document.getElementById('syncIndicator');
+  if (!el) {
+    el = document.createElement('span');
+    el.id = 'syncIndicator';
+    el.style.cssText = 'font-size:.7rem;margin-left:8px;';
+    const summary = document.getElementById('memoSummary');
+    if (summary) summary.appendChild(el);
+  }
+  if (syncStatus === 'syncing') {
+    el.textContent = '(同期中...)';
+    el.style.color = '#b0a0c8';
+  } else if (syncStatus === 'error') {
+    el.textContent = '(オフライン)';
+    el.style.color = '#d08040';
+  } else {
+    el.textContent = '';
   }
 }
 
