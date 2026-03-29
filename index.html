@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>残響のアルケミラ シナリオビューワー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ===== リセット・ベース ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:'Noto Sans JP',sans-serif;background:#f5f3ef;color:#3a3540;line-height:1.8;overflow:hidden;height:100vh}
+
+/* ===== レイアウト ===== */
+.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:280px 1fr;height:100vh}
+.header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:#2c2835;color:#e8e0f0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.header h1{font-family:'Noto Serif JP',serif;font-size:1.05rem;font-weight:700;letter-spacing:.08em;color:#d4c6e8}
+.header h1 span{font-size:.75rem;font-weight:400;color:#a090b8;margin-left:10px;letter-spacing:.04em}
+.header-actions{display:flex;gap:8px;align-items:center}
+.header-actions button{background:#3d3548;border:1px solid #5a4d6a;color:#d4c6e8;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .2s}
+.header-actions button:hover{background:#8b6fb0;color:#fff;border-color:#8b6fb0}
+.memo-badge{background:#e8a040;color:#2c2835;border-radius:10px;padding:1px 7px;font-size:.7rem;font-weight:700;margin-left:4px}
+
+/* ===== サイドバー ===== */
+.sidebar{background:#2c2835;border-right:1px solid #3d3548;overflow-y:auto;padding:12px 0;scrollbar-width:thin;scrollbar-color:#5a4d6a #2c2835}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:#5a4d6a;border-radius:3px}
+.sidebar::-webkit-scrollbar-track{background:#2c2835}
+.chapter-group{margin-bottom:2px}
+.chapter-header{display:flex;align-items:center;padding:8px 16px;cursor:pointer;color:#b0a0c8;font-size:.82rem;font-weight:500;transition:all .15s;user-select:none}
+.chapter-header:hover{background:#3d3548;color:#e8e0f0}
+.chapter-header.active{color:#d4b8f0}
+.chapter-header .arrow{margin-right:8px;font-size:.65rem;transition:transform .2s;width:10px;text-align:center}
+.chapter-header.open .arrow{transform:rotate(90deg)}
+.chapter-header .ch-num{color:#8b6fb0;margin-right:6px;font-weight:700;font-size:.75rem}
+.chapter-header .ch-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chapter-header .scene-count{margin-left:auto;font-size:.7rem;color:#6a5c80;flex-shrink:0;padding-left:8px}
+.scene-list{display:none;padding:0 0 4px 0}
+.chapter-group.open .scene-list{display:block}
+.scene-item{display:flex;align-items:center;padding:5px 16px 5px 36px;cursor:pointer;color:#8a7ea0;font-size:.78rem;transition:all .15s;gap:6px}
+.scene-item:hover{background:#3d3548;color:#d4c6e8}
+.scene-item.active{background:#4a3d5c;color:#e8d8f8;border-right:3px solid #8b6fb0}
+.scene-item .s-num{color:#6a5c80;flex-shrink:0;width:18px}
+.scene-item .s-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scene-item .s-memo{margin-left:auto;flex-shrink:0}
+.scene-item .s-memo .dot{display:inline-block;width:7px;height:7px;background:#e8a040;border-radius:50%}
+
+.sidebar-footer{border-top:1px solid #3d3548;padding:12px 16px;margin-top:8px}
+.sidebar-footer .memo-summary{font-size:.75rem;color:#8a7ea0;margin-bottom:8px}
+.sidebar-footer button{width:100%;background:#3d3548;border:1px solid #5a4d6a;color:#d4c6e8;padding:8px;border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .2s}
+.sidebar-footer button:hover{background:#8b6fb0;color:#fff;border-color:#8b6fb0}
+
+/* ===== メインリーダー ===== */
+.reader{overflow-y:auto;padding:0;background:#f5f3ef;scrollbar-width:thin;scrollbar-color:#c8c0d0 #f5f3ef}
+.reader::-webkit-scrollbar{width:8px}
+.reader::-webkit-scrollbar-thumb{background:#c8c0d0;border-radius:4px}
+.reader-inner{max-width:740px;margin:0 auto;padding:40px 48px 120px}
+
+/* シーンヘッダー */
+.scene-header{margin-bottom:36px;padding-bottom:20px;border-bottom:1px solid #d8d0e0}
+.scene-header .chapter-label{font-size:.82rem;color:#8b6fb0;font-weight:500;margin-bottom:4px}
+.scene-header h2{font-family:'Noto Serif JP',serif;font-size:1.4rem;color:#3a3540;font-weight:700;margin-bottom:6px;line-height:1.5}
+.scene-header .meta{font-size:.78rem;color:#9a90a8}
+
+/* 段落 */
+.paragraph{position:relative;padding:8px 44px 8px 12px;margin:0 -12px;border-radius:4px;cursor:pointer;transition:background .15s;font-family:'Noto Serif JP',serif;font-size:.95rem;line-height:2;letter-spacing:.02em;color:#3a3540}
+.paragraph:hover{background:#efe8f5}
+.paragraph.has-memo{background:#fdf6e8;border-left:3px solid #e8a040}
+.paragraph.has-memo:hover{background:#faf0d8}
+.paragraph.selected{background:#e8ddf5;border-left:3px solid #8b6fb0}
+.paragraph .memo-indicator{position:absolute;right:8px;top:8px;opacity:0;transition:opacity .15s;font-size:.85rem;color:#8b6fb0}
+.paragraph:hover .memo-indicator{opacity:.5}
+.paragraph.has-memo .memo-indicator{opacity:1;color:#e8a040}
+
+/* 特殊段落 */
+.paragraph.type-break{text-align:center;color:#b0a0c8;font-size:1.1rem;padding:16px 0;letter-spacing:.5em;cursor:default}
+.paragraph.type-break:hover{background:transparent}
+.paragraph.type-divider{text-align:center;padding:12px 0;cursor:default}
+.paragraph.type-divider:hover{background:transparent}
+.paragraph.type-divider::after{content:'';display:block;width:60px;height:1px;background:#d8d0e0;margin:0 auto}
+.paragraph.type-choice_header{font-weight:700;color:#8b6fb0;font-family:'Noto Sans JP',sans-serif;font-size:.9rem;padding:16px 12px 8px;cursor:default}
+.paragraph.type-choice_header:hover{background:transparent}
+.paragraph.type-choice{background:#f0eaf8;border-left:3px solid #8b6fb0;padding:10px 44px 10px 16px;margin:4px -12px;font-size:.88rem;color:#5a4080}
+.paragraph.type-choice_label{font-size:.82rem;color:#9a90a8;font-style:italic;padding:12px 12px 4px;font-family:'Noto Sans JP',sans-serif;cursor:default}
+.paragraph.type-choice_label:hover{background:transparent}
+
+/* ===== メモ入力パネル（インライン） ===== */
+.memo-panel{background:#fff;border:1px solid #d8d0e0;border-radius:8px;padding:16px;margin:8px -12px 12px;box-shadow:0 4px 16px rgba(0,0,0,.08);display:none;animation:memoSlide .2s ease}
+@keyframes memoSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.memo-panel.show{display:block}
+.memo-panel .quote{font-size:.82rem;color:#8a7ea0;border-left:3px solid #d8d0e0;padding:6px 12px;margin-bottom:10px;max-height:80px;overflow-y:auto;line-height:1.6;font-family:'Noto Serif JP',serif}
+.memo-panel textarea{width:100%;border:1px solid #d8d0e0;border-radius:6px;padding:10px;font-family:'Noto Sans JP',sans-serif;font-size:.88rem;line-height:1.6;resize:vertical;min-height:80px;outline:none;transition:border-color .2s}
+.memo-panel textarea:focus{border-color:#8b6fb0}
+.memo-panel .actions{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}
+.memo-panel .actions button{padding:6px 16px;border-radius:6px;font-size:.82rem;cursor:pointer;transition:all .2s;border:1px solid}
+.btn-save{background:#8b6fb0;color:#fff;border-color:#8b6fb0!important}
+.btn-save:hover{background:#7a5ea0}
+.btn-cancel{background:#fff;color:#6a5c80;border-color:#d8d0e0!important}
+.btn-cancel:hover{background:#f5f0fa}
+.btn-delete{background:#fff;color:#d04040;border-color:#e0b0b0!important}
+.btn-delete:hover{background:#fdf0f0}
+
+/* シーンナビゲーション */
+.scene-nav{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid #d8d0e0}
+.scene-nav button{background:#fff;border:1px solid #d8d0e0;color:#6a5c80;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:.85rem;transition:all .2s}
+.scene-nav button:hover:not(:disabled){background:#8b6fb0;color:#fff;border-color:#8b6fb0}
+.scene-nav button:disabled{opacity:.3;cursor:default}
+
+/* ===== エクスポートモーダル ===== */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center;animation:fadeIn .2s ease}
+.modal-overlay.show{display:flex}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{background:#fff;border-radius:12px;width:90%;max-width:700px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #e8e0f0}
+.modal-header h3{font-size:1rem;color:#3a3540}
+.modal-header .close-btn{background:none;border:none;font-size:1.3rem;color:#8a7ea0;cursor:pointer;padding:4px 8px}
+.modal-header .close-btn:hover{color:#3a3540}
+.modal-body{flex:1;overflow-y:auto;padding:20px 24px}
+.modal-body pre{font-family:'Noto Sans JP',sans-serif;font-size:.82rem;line-height:1.8;white-space:pre-wrap;word-wrap:break-word;color:#3a3540;background:#f8f6f2;padding:16px;border-radius:8px;border:1px solid #e8e0f0}
+.modal-footer{display:flex;gap:8px;padding:16px 24px;border-top:1px solid #e8e0f0;justify-content:flex-end}
+.modal-footer button{padding:8px 20px;border-radius:8px;font-size:.85rem;cursor:pointer;transition:all .2s;border:1px solid}
+.btn-copy{background:#8b6fb0;color:#fff;border-color:#8b6fb0!important}
+.btn-copy:hover{background:#7a5ea0}
+.btn-download{background:#fff;color:#6a5c80;border-color:#d8d0e0!important}
+.btn-download:hover{background:#f5f0fa}
+
+/* メモ一覧モーダル */
+.memo-list-item{padding:12px;border-bottom:1px solid #e8e0f0;cursor:pointer;transition:background .15s}
+.memo-list-item:hover{background:#f8f5fa}
+.memo-list-item:last-child{border-bottom:none}
+.memo-list-item .location{font-size:.78rem;color:#8b6fb0;margin-bottom:4px}
+.memo-list-item .quote-text{font-size:.8rem;color:#8a7ea0;border-left:2px solid #d8d0e0;padding-left:8px;margin-bottom:4px;max-height:40px;overflow:hidden}
+.memo-list-item .memo-text{font-size:.85rem;color:#3a3540}
+.empty-state{text-align:center;padding:40px;color:#b0a0c8;font-size:.9rem}
+
+/* ===== ウェルカム画面 ===== */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:#b0a0c8;padding:40px}
+.welcome h2{font-family:'Noto Serif JP',serif;font-size:1.8rem;color:#6a5c80;margin-bottom:12px;letter-spacing:.1em}
+.welcome p{font-size:.9rem;line-height:1.8;max-width:400px}
+.welcome .stats{margin-top:24px;display:flex;gap:24px}
+.welcome .stat{text-align:center}
+.welcome .stat .num{font-size:1.8rem;font-weight:700;color:#8b6fb0}
+.welcome .stat .label{font-size:.75rem;color:#a090b8}
+
+/* ===== レスポンシブ ===== */
+@media(max-width:900px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none;position:fixed;inset:52px 0 0 0;z-index:90;width:300px;box-shadow:4px 0 16px rgba(0,0,0,.3)}
+  .sidebar.show{display:block}
+  .header .menu-btn{display:block}
+  .reader-inner{padding:24px 20px 80px}
+}
+@media(min-width:901px){
+  .header .menu-btn{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ヘッダー -->
+  <header class="header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="menu-btn" onclick="toggleSidebar()" style="background:none;border:none;color:#d4c6e8;font-size:1.2rem;cursor:pointer">&#9776;</button>
+      <h1>残響のアルケミラ<span>シナリオビューワー</span></h1>
+    </div>
+    <div class="header-actions">
+      <button onclick="showMemoList()">メモ一覧<span class="memo-badge" id="memoBadge" style="display:none">0</span></button>
+      <button onclick="showExport()">エクスポート</button>
+    </div>
+  </header>
+
+  <!-- サイドバー -->
+  <aside class="sidebar" id="sidebar">
+    <div id="chapterList"></div>
+    <div class="sidebar-footer">
+      <div class="memo-summary" id="memoSummary">メモ: 0件</div>
+      <button onclick="showExport()">メモをエクスポート</button>
+    </div>
+  </aside>
+
+  <!-- メインリーダー -->
+  <main class="reader" id="reader">
+    <div class="reader-inner" id="readerInner">
+      <div class="welcome" id="welcome">
+        <h2>残響のアルケミラ</h2>
+        <p>左のサイドバーから章・シーンを選択して<br>シナリオテキストを閲覧できます</p>
+        <div class="stats" id="welcomeStats"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- エクスポート/メモ一覧 モーダル -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modalTitle">エクスポート</h3>
+      <button class="close-btn" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<script src="scenes.js"></script>
+<script>
+// ===== 状態管理 =====
+let currentChapter = null;
+let currentScene = null;
+let selectedParagraphId = null;
+let memos = {};
+
+// ===== 初期化 =====
+function init() {
+  loadMemos();
+  renderSidebar();
+  updateMemoBadge();
+  renderWelcomeStats();
+
+  // Escapeキーでモーダル/メモパネルを閉じる
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      closeModal();
+      closeMemoPanel();
+    }
+  });
+}
+
+// ===== サイドバー描画 =====
+function renderSidebar() {
+  const container = document.getElementById('chapterList');
+  let html = '';
+
+  for (const ch of CHAPTERS) {
+    const scenesMemos = ch.scenes.map(s => {
+      const key = `ch${String(ch.number).padStart(2,'0')}-s${String(s.scene).padStart(2,'0')}`;
+      const hasMemo = Object.keys(memos).some(k => k.startsWith(key));
+      return hasMemo;
+    });
+    const chHasMemo = scenesMemos.some(Boolean);
+
+    html += `<div class="chapter-group" id="chg-${ch.number}">`;
+    html += `<div class="chapter-header" onclick="toggleChapter(${ch.number})">`;
+    html += `<span class="arrow">&#9654;</span>`;
+    html += `<span class="ch-num">第${ch.number}章</span>`;
+    html += `<span class="ch-title">${ch.title}</span>`;
+    html += `<span class="scene-count">${ch.scenes.length}</span>`;
+    html += `</div>`;
+    html += `<div class="scene-list">`;
+
+    for (let i = 0; i < ch.scenes.length; i++) {
+      const s = ch.scenes[i];
+      html += `<div class="scene-item" id="si-${ch.number}-${s.scene}" onclick="loadScene(${ch.number},${s.scene})">`;
+      html += `<span class="s-num">${s.scene}</span>`;
+      html += `<span class="s-title">${s.title}</span>`;
+      if (scenesMemos[i]) {
+        html += `<span class="s-memo"><span class="dot"></span></span>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function toggleChapter(num) {
+  const group = document.getElementById(`chg-${num}`);
+  const header = group.querySelector('.chapter-header');
+  group.classList.toggle('open');
+  header.classList.toggle('open');
+}
+
+// ===== シーン読み込み =====
+function loadScene(chapter, scene) {
+  const sceneData = SCENES.find(s => s.chapter === chapter && s.scene === scene);
+  if (!sceneData) return;
+
+  currentChapter = chapter;
+  currentScene = scene;
+  selectedParagraphId = null;
+
+  // サイドバーのアクティブ状態を更新
+  document.querySelectorAll('.scene-item').forEach(el => el.classList.remove('active'));
+  const activeItem = document.getElementById(`si-${chapter}-${scene}`);
+  if (activeItem) activeItem.classList.add('active');
+
+  // 章を開く
+  const group = document.getElementById(`chg-${chapter}`);
+  if (group && !group.classList.contains('open')) {
+    group.classList.add('open');
+    group.querySelector('.chapter-header').classList.add('open');
+  }
+
+  // 章ヘッダーのアクティブ表示
+  document.querySelectorAll('.chapter-header').forEach(el => el.classList.remove('active'));
+  if (group) group.querySelector('.chapter-header').classList.add('active');
+
+  // 本文描画
+  const container = document.getElementById('readerInner');
+  let html = '';
+
+  // シーンヘッダー
+  html += `<div class="scene-header">`;
+  html += `<div class="chapter-label">第${chapter}章「${sceneData.chapterTitle}」</div>`;
+  html += `<h2>Scene ${scene}: ${sceneData.sceneTitle}</h2>`;
+  html += `<div class="meta">${sceneData.wordCount}</div>`;
+  html += `</div>`;
+
+  // 段落描画
+  for (const p of sceneData.paragraphs) {
+    const hasMemo = !!memos[p.id];
+    const memoClass = hasMemo ? ' has-memo' : '';
+    const clickable = (p.type === 'text' || p.type === 'choice');
+
+    html += `<div class="paragraph type-${p.type}${memoClass}" id="p-${p.id}" `;
+    if (clickable) {
+      html += `onclick="onParagraphClick('${p.id}')" `;
+    }
+    html += `>`;
+
+    if (p.type === 'break') {
+      html += '&#9671;';
+    } else if (p.type === 'divider') {
+      // 空（CSSの::afterで描画）
+    } else {
+      // テキスト（改行をbrに変換）
+      html += escapeHtml(p.text).replace(/\n/g, '<br>');
+    }
+
+    if (clickable) {
+      html += `<span class="memo-indicator">${hasMemo ? '&#128221;' : '&#128203;'}</span>`;
+    }
+
+    html += `</div>`;
+
+    // メモパネル挿入位置
+    html += `<div class="memo-panel" id="mp-${p.id}"></div>`;
+  }
+
+  // シーンナビゲーション
+  const {prev, next} = getAdjacentScenes(chapter, scene);
+  html += `<div class="scene-nav">`;
+  if (prev) {
+    html += `<button onclick="loadScene(${prev.chapter},${prev.scene})">&#8592; Scene ${prev.scene}: ${prev.title}</button>`;
+  } else {
+    html += `<button disabled>&#8592;</button>`;
+  }
+  if (next) {
+    html += `<button onclick="loadScene(${next.chapter},${next.scene})">Scene ${next.scene}: ${next.title} &#8594;</button>`;
+  } else {
+    html += `<button disabled>&#8594;</button>`;
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+  document.getElementById('reader').scrollTop = 0;
+
+  // モバイル: サイドバーを閉じる
+  document.getElementById('sidebar').classList.remove('show');
+}
+
+function getAdjacentScenes(chapter, scene) {
+  const idx = SCENES.findIndex(s => s.chapter === chapter && s.scene === scene);
+  const prev = idx > 0 ? SCENES[idx - 1] : null;
+  const next = idx < SCENES.length - 1 ? SCENES[idx + 1] : null;
+  return {
+    prev: prev ? {chapter: prev.chapter, scene: prev.scene, title: prev.sceneTitle} : null,
+    next: next ? {chapter: next.chapter, scene: next.scene, title: next.sceneTitle} : null,
+  };
+}
+
+// ===== 段落クリック → メモパネル =====
+function onParagraphClick(pid) {
+  // 前のパネルを閉じる
+  if (selectedParagraphId && selectedParagraphId !== pid) {
+    closeMemoPanel();
+  }
+
+  const pEl = document.getElementById(`p-${pid}`);
+  const panel = document.getElementById(`mp-${pid}`);
+  if (!pEl || !panel) return;
+
+  // 同じ段落を再クリックしたらトグル
+  if (selectedParagraphId === pid && panel.classList.contains('show')) {
+    closeMemoPanel();
+    return;
+  }
+
+  selectedParagraphId = pid;
+  pEl.classList.add('selected');
+
+  // 段落テキストを取得
+  const sceneData = SCENES.find(s => s.chapter === currentChapter && s.scene === currentScene);
+  const pData = sceneData?.paragraphs.find(p => p.id === pid);
+  const pText = pData ? pData.text : '';
+  const existing = memos[pid];
+
+  let html = '';
+  html += `<div class="quote">${escapeHtml(truncate(pText, 200))}</div>`;
+  html += `<textarea id="memoInput" placeholder="メモを入力...">${existing ? escapeHtml(existing.memo) : ''}</textarea>`;
+  html += `<div class="actions">`;
+  if (existing) {
+    html += `<button class="btn-delete" onclick="deleteMemo('${pid}')">削除</button>`;
+  }
+  html += `<button class="btn-cancel" onclick="closeMemoPanel()">キャンセル</button>`;
+  html += `<button class="btn-save" onclick="saveMemo('${pid}')">保存</button>`;
+  html += `</div>`;
+
+  panel.innerHTML = html;
+  panel.classList.add('show');
+
+  // テキストエリアにフォーカス
+  setTimeout(() => {
+    const ta = document.getElementById('memoInput');
+    if (ta) ta.focus();
+  }, 100);
+}
+
+function closeMemoPanel() {
+  if (selectedParagraphId) {
+    const pEl = document.getElementById(`p-${selectedParagraphId}`);
+    const panel = document.getElementById(`mp-${selectedParagraphId}`);
+    if (pEl) pEl.classList.remove('selected');
+    if (panel) {
+      panel.classList.remove('show');
+      panel.innerHTML = '';
+    }
+    selectedParagraphId = null;
+  }
+}
+
+// ===== メモ CRUD =====
+function saveMemo(pid) {
+  const ta = document.getElementById('memoInput');
+  if (!ta || !ta.value.trim()) return;
+
+  const sceneData = SCENES.find(s => s.chapter === currentChapter && s.scene === currentScene);
+  const pData = sceneData?.paragraphs.find(p => p.id === pid);
+
+  memos[pid] = {
+    chapter: currentChapter,
+    scene: currentScene,
+    chapterTitle: sceneData?.chapterTitle || '',
+    sceneTitle: sceneData?.sceneTitle || '',
+    paragraphText: pData ? truncate(pData.text, 300) : '',
+    memo: ta.value.trim(),
+    timestamp: new Date().toISOString(),
+  };
+
+  persistMemos();
+  closeMemoPanel();
+
+  // 段落のメモ表示を更新
+  const pEl = document.getElementById(`p-${pid}`);
+  if (pEl) {
+    pEl.classList.add('has-memo');
+    const indicator = pEl.querySelector('.memo-indicator');
+    if (indicator) indicator.innerHTML = '&#128221;';
+  }
+
+  updateMemoBadge();
+  renderSidebar();
+}
+
+function deleteMemo(pid) {
+  delete memos[pid];
+  persistMemos();
+  closeMemoPanel();
+
+  const pEl = document.getElementById(`p-${pid}`);
+  if (pEl) {
+    pEl.classList.remove('has-memo');
+    const indicator = pEl.querySelector('.memo-indicator');
+    if (indicator) indicator.innerHTML = '&#128203;';
+  }
+
+  updateMemoBadge();
+  renderSidebar();
+}
+
+// ===== localStorage =====
+const STORAGE_KEY = 'alchemira-viewer-memos';
+
+function loadMemos() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) memos = JSON.parse(raw);
+  } catch (e) {
+    console.warn('メモの読み込みに失敗:', e);
+    memos = {};
+  }
+}
+
+function persistMemos() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
+  } catch (e) {
+    console.warn('メモの保存に失敗:', e);
+  }
+}
+
+// ===== メモバッジ更新 =====
+function updateMemoBadge() {
+  const count = Object.keys(memos).length;
+  const badge = document.getElementById('memoBadge');
+  const summary = document.getElementById('memoSummary');
+
+  if (badge) {
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline' : 'none';
+  }
+  if (summary) {
+    summary.textContent = `メモ: ${count}件`;
+  }
+}
+
+// ===== メモ一覧モーダル =====
+function showMemoList() {
+  const overlay = document.getElementById('modalOverlay');
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+  const footer = document.getElementById('modalFooter');
+
+  title.textContent = 'メモ一覧';
+
+  const entries = Object.entries(memos).sort((a, b) => {
+    // 章→シーン→段落順
+    return a[0].localeCompare(b[0]);
+  });
+
+  if (entries.length === 0) {
+    body.innerHTML = '<div class="empty-state">メモはまだありません<br>シーン内の段落をクリックしてメモを追加できます</div>';
+  } else {
+    let html = '';
+    for (const [pid, m] of entries) {
+      html += `<div class="memo-list-item" onclick="jumpToMemo('${pid}')">`;
+      html += `<div class="location">第${m.chapter}章「${m.chapterTitle}」Scene ${m.scene}: ${m.sceneTitle}</div>`;
+      html += `<div class="quote-text">${escapeHtml(truncate(m.paragraphText, 100))}</div>`;
+      html += `<div class="memo-text">${escapeHtml(m.memo)}</div>`;
+      html += `</div>`;
+    }
+    body.innerHTML = html;
+  }
+
+  footer.innerHTML = `<button class="btn-download" onclick="closeModal()">閉じる</button>`;
+  overlay.classList.add('show');
+}
+
+function jumpToMemo(pid) {
+  // pidからchapter,scene情報を復元
+  const m = memos[pid];
+  if (!m) return;
+
+  closeModal();
+  loadScene(m.chapter, m.scene);
+
+  // 少し待ってからスクロール
+  setTimeout(() => {
+    const el = document.getElementById(`p-${pid}`);
+    if (el) {
+      el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      el.classList.add('selected');
+      setTimeout(() => el.classList.remove('selected'), 1500);
+    }
+  }, 100);
+}
+
+// ===== エクスポート =====
+function showExport() {
+  const overlay = document.getElementById('modalOverlay');
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+  const footer = document.getElementById('modalFooter');
+
+  title.textContent = 'メモエクスポート';
+
+  const md = generateExportMarkdown();
+  body.innerHTML = `<pre id="exportContent">${escapeHtml(md)}</pre>`;
+
+  footer.innerHTML = `
+    <button class="btn-download" onclick="downloadExport()">ダウンロード (.md)</button>
+    <button class="btn-copy" onclick="copyExport()">クリップボードにコピー</button>
+  `;
+
+  overlay.classList.add('show');
+}
+
+function generateExportMarkdown() {
+  const entries = Object.entries(memos).sort((a, b) => a[0].localeCompare(b[0]));
+  const now = new Date().toLocaleString('ja-JP');
+
+  if (entries.length === 0) {
+    return `# メモ一覧 - 残響のアルケミラ\nエクスポート日時: ${now}\n\nメモはありません。`;
+  }
+
+  let md = `# メモ一覧 - 残響のアルケミラ\n`;
+  md += `エクスポート日時: ${now}\n`;
+  md += `メモ総数: ${entries.length}件\n\n`;
+
+  let lastChapterScene = '';
+
+  for (const [pid, m] of entries) {
+    const csKey = `ch${m.chapter}-s${m.scene}`;
+    if (csKey !== lastChapterScene) {
+      md += `---\n\n`;
+      md += `## 第${m.chapter}章「${m.chapterTitle}」 Scene ${m.scene}: ${m.sceneTitle}\n\n`;
+      lastChapterScene = csKey;
+    }
+
+    // pidから段落番号を抽出
+    const pNum = pid.split('-p')[1]?.replace(/^0+/, '') || '?';
+    md += `### [段落 ${pNum}]\n`;
+    md += `> ${m.paragraphText.replace(/\n/g, '\n> ')}\n\n`;
+    md += `${m.memo}\n\n`;
+  }
+
+  return md;
+}
+
+function copyExport() {
+  const md = generateExportMarkdown();
+  navigator.clipboard.writeText(md).then(() => {
+    const btn = document.querySelector('.btn-copy');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'コピーしました';
+      setTimeout(() => btn.textContent = orig, 1500);
+    }
+  });
+}
+
+function downloadExport() {
+  const md = generateExportMarkdown();
+  const blob = new Blob([md], {type: 'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alchemira-memos-${new Date().toISOString().slice(0,10)}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ===== モーダル制御 =====
+function closeModal(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+// ===== ウェルカム画面 =====
+function renderWelcomeStats() {
+  const totalScenes = SCENES.length;
+  const totalChapters = CHAPTERS.length;
+  const totalParagraphs = SCENES.reduce((sum, s) => sum + s.paragraphs.length, 0);
+
+  const el = document.getElementById('welcomeStats');
+  if (el) {
+    el.innerHTML = `
+      <div class="stat"><div class="num">${totalChapters}</div><div class="label">章</div></div>
+      <div class="stat"><div class="num">${totalScenes}</div><div class="label">シーン</div></div>
+      <div class="stat"><div class="num">${totalParagraphs.toLocaleString()}</div><div class="label">段落</div></div>
+    `;
+  }
+}
+
+// ===== モバイルサイドバー =====
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('show');
+}
+
+// ===== ユーティリティ =====
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function truncate(str, max) {
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max) + '...' : str;
+}
+
+// ===== 起動 =====
+init();
+</script>
+</body>
+</html>
